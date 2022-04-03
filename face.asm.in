@@ -1,0 +1,185 @@
+; -*-Assembler-*-
+
+changecom(`@')
+
+;; VIA: 8000
+define(PORTB, h8000)
+define(PORTA, h8001)
+define(DDRB, h8002)
+define(DDRA, h8003)
+
+define(`L_CGRAM', `0b01000000')
+define(`L_DDRAM', `0b10000000')
+
+define(`L_E', `0b001')
+define(`L_RS', `0b010')
+define(`L_RW', `0b100')
+
+define(`hh', `eval($1, 16)')
+define(`bh', `eval(0b$1, 16)')
+
+        ;; reset stack
+reset:  LDX # ff
+        TXS i
+
+        ;; Set pins 0-2 on Port A to Output
+        LDA # bh(00000111)
+        STA a DDRA
+
+        ;; Function Set:
+        ;;  D7  D6  D5  D4  D3  D2  D1  D0
+        ;;   0   0   1   B   L   F   x   x
+        ;; (Bits 8/4, Lines 2/1, Font 5x11/5x8)
+        LDA # bh(00111000)
+        JSR a :lcd-w-rs0
+
+        ;; Display ON/OFF:
+        ;;  D7  D6  D5  D4  D3  D2  D1  D0
+        ;;   0   0   0   0   0   D   C   B
+        ;; (Display, Cursor, Blink)
+        LDA # bh(00001110)
+        JSR a :lcd-w-rs0
+
+        ;; Clear Display:
+        ;;  D7  D6  D5  D4  D3  D2  D1  D0
+        ;;   0   0   0   0   0   0   0   1
+        LDA # bh(00000001)
+        JSR a :lcd-w-rs0
+
+        ;; Entry Mode Set:
+        ;;  D7  D6  D5  D4  D3  D2  D1  D0
+        ;;   0   0   0   0   0   1 I/D   S
+        ;; (Increment/Decrement, Shift)
+        LDA # bh(00000110)
+        JSR a :lcd-w-rs0
+
+        ;; Set DDRAM Address:
+        ;;  D7  D6  D5  D4  D3  D2  D1  D0
+        ;;   1  A6  A5  A4  A3  A2  A1  A0
+        LDA # hh(L_DDRAM|0)
+        JSR a :lcd-w-rs0
+
+        ;; Write Data:
+        ;;  D7  D6  D5  D4  D3  D2  D1  D0
+        ;;   D   D   D   D   D   D   D   D
+        LDA # 0
+        JSR a :lcd-w-rs1
+
+        ;; Write Data:
+        ;;  D7  D6  D5  D4  D3  D2  D1  D0
+        ;;   D   D   D   D   D   D   D   D
+        LDA # 1
+        JSR a :lcd-w-rs1
+
+        ;; Set CGRAM Address:
+        ;;  D7  D6  D5  D4  D3  D2  D1  D0
+        ;;   0   1 AC5 AC4 AC3 AC2 AC1 AC0
+        LDA # hh(L_CGRAM|0)
+        JSR a :lcd-w-rs0
+
+        ;; data is at e000
+        LDA # 00
+        STA zp 00
+        LDA # e0
+        STA zp 01
+
+        ;; 16
+        LDX # 16
+        LDY # 0
+
+loop:   LDA (zp),y 00
+
+        ;; Write Data to CGRAM
+        ;;  D7  D6  D5  D4  D3  D2  D1  D0
+        ;;   D   D   D   D   D   D   D   D
+        ;; RS:1 RW:0
+        STA a PORTB
+        JSR a :lcd-w-rs1
+
+        INY i
+        DEX i
+        BNE r :loop
+
+
+        ;; Display ON/OFF:
+        ;;  D7  D6  D5  D4  D3  D2  D1  D0
+        ;;   0   0   0   0   0   D   C   B
+        ;; (Display, Cursor, Blink)
+        LDA # bh(00001100)
+        JSR a :lcd-w-rs0
+
+        ;; Set CGRAM Address
+        ;;  D7  D6  D5  D4  D3  D2  D1  D0
+        ;;   0   1 AC5 AC4 AC3 AC2 AC1 AC0
+loop2:  LDA # hh(L_CGRAM|9)
+        JSR a :lcd-w-rs0
+
+        ;; Write Data to CGRAM
+        ;;  D7  D6  D5  D4  D3  D2  D1  D0
+        ;;   D   D   D   D   D   D   D   D
+        LDA # bh(00110)
+        JSR a :lcd-w-rs1
+
+        ;; Set CGRAM Address
+        ;;  D7  D6  D5  D4  D3  D2  D1  D0
+        ;;   0   1 AC5 AC4 AC3 AC2 AC1 AC0
+        LDA # hh(L_CGRAM|9)
+        JSR a :lcd-w-rs0
+
+        ;; Write Data to CGRAM
+        ;;  D7  D6  D5  D4  D3  D2  D1  D0
+        ;;   D   D   D   D   D   D   D   D
+        LDA # bh(00000)
+        JSR a :lcd-w-rs1
+
+        JMP a :loop2
+
+stop:   JMP a :stop
+
+
+        ;; write "instruction"
+lcd-w-rs0:      JSR a :lcd-wait
+
+                STA a PORTB
+                LDA # 0
+                STA a PORTA
+                LDA # hh(L_E)
+                STA a PORTA
+                LDA # 0
+                STA a PORTA
+                RTS s
+
+        ;; write "data" to lcd
+lcd-w-rs1:      JSR a :lcd-wait
+
+                STA a PORTB
+                LDA # hh(L_RS)
+                STA a PORTA
+                LDA # hh(L_RS|L_E)
+                STA a PORTA
+                LDA # hh(L_RS)
+                STA a PORTA
+                RTS s
+
+        ;; wait BF
+lcd-wait:       PHA s
+
+                LDA # bh(00000000)  ;; Set pins 0-7 on Port B to Input
+                STA a DDRB
+
+_lcd_wait:      LDA # hh(L_RW)
+                STA a PORTA
+                LDA # hh(L_E|L_RW)
+                STA a PORTA
+                LDA a PORTB
+                AND # bh(10000000)
+                BNE r :_lcd_wait
+
+                LDA # hh(L_RW)
+                STA a PORTA
+
+                LDA # bh(11111111)  ;; Set pins 0-7 on Port B to Output
+                STA a DDRB
+
+                PLA s
+                RTS s
