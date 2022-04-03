@@ -1,0 +1,64 @@
+; -*-asm-*-
+include(`common.m4')
+
+define(ticks_, 00)
+
+        BRA r :reset
+        BRA r :irq
+
+;;; begin irq
+irq:    PHA s
+
+        LDA a T1CL
+        DEC zp ticks_
+
+        PLA s
+        RTI s
+;;; end irq
+
+
+reset:  LDX # ff
+        TXS i
+
+        LDA # %10000000  ;; Set pins 0-7 on Port B to Output
+        STA a DDRA
+
+        JSR a :continuous
+
+count:  LDA # 25
+        STA zp ticks_
+
+loop:   LDA zp ticks_
+        BPL r :loop
+        LDA # %10000000
+        EOR a PORTA
+        STA a PORTA
+        BRA r :count
+
+
+;;; begin continuous
+continuous:     LDA # %01000000
+                STA a ACR
+                LDA # 0e
+                STA a T1CL
+                LDA # 27
+                STA a T1CH
+                LDA # %11000000
+                STA a IER
+                CLI i
+                RTS s
+;;; end continuous
+
+
+;;; begin oneshot
+oneshot:        LDA # %00000000
+                STA a ACR
+                LDA # 50
+                STA a T1CL
+                LDA # c3
+                STA a T1CH
+_oneshot:       BIT a IFR
+                BVC r :_oneshot ; IFR[6]==0
+                LDA a T1CL    ; clear IFR[6]
+                RTS s
+;;; end oneshot

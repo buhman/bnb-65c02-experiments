@@ -1,6 +1,8 @@
 HOME = /home/buhman
 
-%.asm: %.asm.in
+all:
+
+%.asm: %.asm.in common.m4
 	m4 < $< > $@
 
 %.bin: %.asm
