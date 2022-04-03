@@ -1,4 +1,4 @@
-; -*-Assembler-*-
+; -*-asm-*-
 
 changecom(`@')
 
